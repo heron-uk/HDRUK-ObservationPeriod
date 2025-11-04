@@ -1,25 +1,24 @@
-library(magrittr)
 
 # source functions and create logger
 source(here::here("Analysis", "functions.R"))
-createLog()
+omopgenerics::createLogFile(logFile = here::here("Results", "log_{date}_{time}"))
 
 dataEndDate <- as.Date(dataEndDate)
 omopgenerics::assertDate(dataEndDate, length = 1)
 
 # create cdm object
-logMessage("Create cdm object")
+omopgenerics::logMessage("Create cdm object")
 cdm <- CDMConnector::cdmFromCon(
   con = con, cdmSchema = cdmSchema, writeSchema = writeSchema,
   writePrefix = writePrefix, cdmName = dbName
 )
 
 # snapshot
-logMessage("Extract cdm snapshot")
+omopgenerics::logMessage("Extract cdm snapshot")
 snapshot <- OmopSketch::summariseOmopSnapshot(cdm)
 
 # instantiate antibiotics cohorts
-logMessage("Instantiate antibiotics cohorts")
+omopgenerics::logMessage("Instantiate antibiotics cohorts")
 codelist <- CodelistGenerator::getDrugIngredientCodes(
   cdm = cdm,
   name = c("azithromycin", "ciprofloxacin", "teicoplanin"),
@@ -31,59 +30,73 @@ cdm <- DrugUtilisation::generateDrugUtilisationCohortSet(
   suppressMessages()
 
 # original observation period
-logMessage("Characterise original observation period")
+omopgenerics::logMessage("Characterise original observation period")
 originalResult <- summaryInObservation(cdm, "original_data")
 
-# min-extract observation period
-logMessage("Create min-extract observation period")
-cdm <- generateMinDateObservationPeriod(cdm, dataEndDate, censorAge)
-logMessage("Characterise min-extract observation period")
+# first to extract observation period
+omopgenerics::logMessage("Create first to extract observation period")
+cdm <- OmopConstructor::buildObservationPeriod(
+  cdm = cdm,
+  collapseDays = Inf,
+  persistenceDays = Inf,
+  dateRange = c(NA, dataEndDate),
+  censorAge = censorAge
+)
+omopgenerics::logMessage("Characterise first to extract observation period")
 minExtractResult <- summaryInObservation(cdm, "min_extract")
 
 # min-max observation period
-logMessage("Create min-max observation period")
-cdm <- generateMinMaxObservationPeriod(cdm, dataEndDate)
-logMessage("Characterise min-max observation period")
+omopgenerics::logMessage("Create min-max observation period")
+cdm <- OmopConstructor::buildObservationPeriod(
+  cdm = cdm,
+  collapseDays = Inf,
+  persistenceDays = 0,
+  dateRange = c(NA, dataEndDate),
+  censorAge = censorAge
+)
+omopgenerics::logMessage("Characterise min-max observation period")
 minMaxResult <- summaryInObservation(cdm, "min_max")
 
 # impatient observation period
-logMessage("Create impatient observation period")
+omopgenerics::logMessage("Create impatient observation period")
 cdm <- generateImpatientObservationPeriod(cdm)
-logMessage("Characterise impatient observation period")
+omopgenerics::logMessage("Characterise impatient observation period")
 impatientResult <- summaryInObservation(cdm, "impatient")
 
-logMessage("Create visit observation period")
-cdm <- generateVisitObservationPeriod(cdm, "otest")
+combinations <- dplyr::tribble(
+  ~collapse, ~persistence,
+  1L, 0L,
+  365L, 0L,
+  365L, 364L,
+  730L, 0L,
+  730L, 729L
+)
+resultCollapsePersistence <- combinations |>
+  purrr::pmap(\(collapse, persistence) {
+    name_id <- paste0("collapse_", collapse, "_persistence", persistence)
+    omopgenerics::logMessage(paste("Create observation period:", collapse, "-", persistence))
 
-combinations <- dplyr::tibble(persistence = 0L, surveillance = FALSE) |>
-  dplyr::union_all(tidyr::expand_grid(
-    persistence = c(180L, 365L, 545L, 730L),
-    surveillance = c(TRUE, FALSE)
-  ))
-resultPersistenceSurveillance <- combinations |>
-  purrr::pmap(\(persistence, surveillance) {
-    name_id <- paste0("persistence_", persistence, "_surveillance", surveillance)
-    logMessage(paste("Create observation period:", persistence, surveillance))
-    cdm <- generateObservationPeriod(cdm = cdm,
-                                     oname = "otest",
-                                     persistence = persistence,
-                                     surveillance = surveillance,
-                                     dataEndDate = dataEndDate)
+    cdm <- OmopConstructor::buildObservationPeriod(
+      cdm = cdm,
+      collapseDays = Inf,
+      persistenceDays = Inf,
+      dateRange = c(NA, dataEndDate),
+      censorAge = censorAge
+    )
 
-    logMessage("Characterise visit observation period")
+    omopgenerics::logMessage("Characterise observation period")
     summaryInObservation(cdm, name_id)
   }) |>
   omopgenerics::bind()
 
 # export data
-logMessage("Export results")
 omopgenerics::exportSummarisedResult(
   snapshot,
   originalResult,
   minExtractResult,
   minMaxResult,
   impatientResult,
-  resultPersistenceSurveillance,
+  resultCollapsePersistence,
   minCellCount = minCellCount,
   fileName = "observation_period_characterisation_{cdm_name}",
   path = here::here("Results")
