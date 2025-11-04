@@ -5,7 +5,7 @@ renv::restore()
 
 # create connection
 con <- DBI::dbConnect("...")
-
+library(odbc)
 # database acronym (e.g. "CPRD AURUM")
 dbName <- "..."
 

@@ -79,7 +79,7 @@ x <- data$in_obs |>
 x <- x |>
   dplyr::union_all(
     x |>
-      dplyr::filter(cdm_name == "CPRD AURUM 50", mode == "Original") |>
+      dplyr::filter(cdm_name == "CPRD AURUM 50", mode == "Bespoke") |>
       dplyr::mutate(count = 0L, mode = "Inpatient hospitalisation")
   ) |>
   dplyr::mutate(

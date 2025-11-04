@@ -270,7 +270,7 @@ summaryInObservation <- function(cdm, mode) {
       order_by = .data$observation_period_start_date
     )) |>
     diffdate(
-      col1 = c("observation_period_start_date", "observation_period_start_date"),
+      col1 = c("observation_period_start_date", "observation_period_end_date"),
       col2 = c("observation_period_end_date", "next_observation"),
       colname = c("duration", "time_to_next_observation"),
       plusOne = c(TRUE, FALSE)
